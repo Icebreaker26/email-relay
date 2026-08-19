@@ -1,0 +1,7 @@
+.env
+node_modules
+.git
+*.ps1
+README.md
+.env.example
+.gitignore

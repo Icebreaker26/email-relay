@@ -13,18 +13,19 @@ if ($cf) {
     Write-Host "  --  cloudflared no estaba corriendo" -ForegroundColor DarkGray
 }
 
-# Detener relay (PM2 o node)
-$pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
-if ($pm2) {
-    try { pm2 stop email-relay | Out-Null; Write-Host "  OK  Relay (PM2) detenido" -ForegroundColor Green } catch { }
-} else {
-    $node = Get-Process -Name node -ErrorAction SilentlyContinue
-    if ($node) {
-        $node | Stop-Process -Force
-        Write-Host "  OK  Relay (node) detenido" -ForegroundColor Green
+# Detener contenedor Docker
+$dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+if ($dockerCmd) {
+    $running = docker ps -q --filter "name=email-relay" 2>$null
+    if ($running) {
+        docker stop email-relay | Out-Null
+        docker rm   email-relay | Out-Null
+        Write-Host "  OK  Contenedor Docker detenido" -ForegroundColor Green
     } else {
-        Write-Host "  --  node no estaba corriendo" -ForegroundColor DarkGray
+        Write-Host "  --  Contenedor no estaba corriendo" -ForegroundColor DarkGray
     }
+} else {
+    Write-Host "  --  Docker no encontrado" -ForegroundColor DarkGray
 }
 
 Write-Host ""

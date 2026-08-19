@@ -34,18 +34,36 @@ if (-not (Test-Path $envFile)) {
     Write-Fail "No se encontro .env en $RelayDir"
 }
 
-$pm2Cmd = Get-Command pm2 -ErrorAction SilentlyContinue
-if ($pm2Cmd) {
-    try { pm2 delete email-relay | Out-Null } catch { }
-    Set-Location $RelayDir
-    pm2 start server.js --name email-relay | Out-Null
-    Write-OK "Relay iniciado con PM2"
-} else {
-    Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Set-Location $RelayDir
-    Start-Process node -ArgumentList "server.js" -WindowStyle Hidden
-    Write-OK "Relay iniciado con node (instala PM2 para auto-restart: npm i -g pm2)"
+$dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+if (-not $dockerCmd) {
+    Write-Fail "Docker no encontrado. Instala Docker Desktop desde https://www.docker.com/products/docker-desktop"
 }
+
+# Verificar que Docker Desktop esta corriendo
+try {
+    docker info | Out-Null
+} catch {
+    Write-Fail "Docker no esta corriendo. Abre Docker Desktop y espera a que este listo."
+}
+
+# Detener contenedor previo si existe
+docker stop email-relay 2>$null | Out-Null
+docker rm   email-relay 2>$null | Out-Null
+
+# Construir imagen (solo reconstruye si hubo cambios)
+Write-Host "      Construyendo imagen Docker..." -NoNewline
+docker build -t email-relay $RelayDir | Out-Null
+Write-Host " listo" -ForegroundColor Green
+
+# Arrancar contenedor aislado con auto-restart
+docker run -d `
+    --name email-relay `
+    --env-file "$envFile" `
+    -p "${RelayPort}:${RelayPort}" `
+    --restart unless-stopped `
+    email-relay | Out-Null
+
+Write-OK "Relay corriendo en contenedor Docker aislado"
 
 $relayOk = $false
 Write-Host "      Esperando que el relay responda" -NoNewline
@@ -183,7 +201,7 @@ Write-Host "  RELAY_URL = $tunnelUrl" -ForegroundColor White
 try { $tunnelUrl | Set-Clipboard; Write-Host "  (copiado al portapapeles)" -ForegroundColor DarkGray } catch { }
 
 Write-Host ""
-if ($pm2Cmd) { Write-Host "  Logs del relay : pm2 logs email-relay" -ForegroundColor DarkGray }
+Write-Host "  Logs del relay : docker logs email-relay" -ForegroundColor DarkGray
 Write-Host "  Log del tunel  : $TunnelLog" -ForegroundColor DarkGray
 Write-Host ""
 

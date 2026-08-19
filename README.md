@@ -104,19 +104,29 @@ Unregister-ScheduledTask -TaskName "KernelEmailRelay" -Confirm:$false
 ## Instalación en un servidor nuevo
 
 ```powershell
-# 1. Instalar Node.js
-winget install OpenJS.NodeJS.LTS
+# 1. Instalar Docker Desktop
+# https://www.docker.com/products/docker-desktop
 
-# 2. Instalar PM2 (gestor de procesos)
-npm install -g pm2
+# 2. Copiar esta carpeta al servidor
 
-# 3. Copiar esta carpeta al servidor e instalar dependencias
-npm install
+# 3. Crear el .env con las variables de arriba
 
-# 4. Crear el .env con las variables de arriba
-
-# 5. Registrar la tarea de inicio (como Administrador)
+# 4. Registrar la tarea de inicio (como Administrador)
 .\registrar-inicio.ps1
+```
+
+> Node.js ya no necesita estar instalado en el host — corre dentro del contenedor Docker.
+
+---
+
+## Aislamiento (Docker)
+
+El relay corre dentro de un contenedor Docker con usuario sin privilegios (`relay`).
+Si alguien explotara una vulnerabilidad en el servicio, quedaría confinado al contenedor
+sin acceso al sistema de archivos del host ni a la red local.
+
+```
+Internet → Cloudflare Tunnel → [contenedor Docker] → SMTP cPanel
 ```
 
 ---
@@ -125,7 +135,10 @@ npm install
 
 ```powershell
 # Ver logs del relay
-pm2 logs email-relay
+docker logs email-relay
+
+# Ver logs en tiempo real
+docker logs -f email-relay
 
 # Ver log del túnel cloudflared
 cat $env:TEMP\cf-kernel-tunnel.log
