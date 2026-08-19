@@ -205,6 +205,37 @@ Write-Host "  Logs del relay : docker logs email-relay" -ForegroundColor DarkGra
 Write-Host "  Log del tunel  : $TunnelLog" -ForegroundColor DarkGray
 Write-Host ""
 
+# ── Watchdog: reinicia el tunel si se cae el internet ───────
+# Corre en segundo plano, verifica cada 2 minutos
+$watchdogScript = {
+    param($scriptPath)
+    while ($true) {
+        Start-Sleep -Seconds 120
+        try {
+            # Si el health del relay local falla, no hay nada que hacer
+            $h = Invoke-RestMethod "http://localhost:3099/health" -TimeoutSec 5
+            if (-not $h.ok) { continue }
+
+            # Verificar que el tunel sigue vivo probando la URL publica
+            $logFile = "$env:TEMP\cf-kernel-tunnel.log"
+            $raw = Get-Content $logFile -Raw -ErrorAction SilentlyContinue
+            if ($raw -match 'https://[a-z0-9-]+\.trycloudflare\.com') {
+                $url = $Matches[0]
+                try {
+                    Invoke-RestMethod "$url/health" -TimeoutSec 10 | Out-Null
+                    # Tunel OK — no hacer nada
+                } catch {
+                    # Tunel caido — relanzar el script completo
+                    Write-Host "[watchdog] Tunel caido, reiniciando..." -ForegroundColor Yellow
+                    Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`" -Silent"
+                }
+            }
+        } catch { }
+    }
+}
+
+Start-Job -ScriptBlock $watchdogScript -ArgumentList $MyInvocation.MyCommand.Definition | Out-Null
+
 if (-not $Silent) {
     Read-Host "Presiona Enter para cerrar (relay y tunel siguen corriendo)"
 }
