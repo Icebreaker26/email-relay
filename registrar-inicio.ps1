@@ -1,5 +1,6 @@
 # registrar-inicio.ps1
 # Registra start.ps1 como tarea de Windows que corre automaticamente al iniciar sesion.
+# Tambien configura Docker Desktop para arrancar en segundo plano.
 # Ejecutar UNA SOLA VEZ como Administrador.
 
 $taskName  = "KernelEmailRelay"
@@ -10,6 +11,25 @@ if (-not (Test-Path $script)) {
     Write-Host "ERROR: No se encontro start.ps1 en $scriptDir" -ForegroundColor Red
     Read-Host "Presiona Enter para cerrar"
     exit 1
+}
+
+# ── Configurar Docker Desktop para arrancar en segundo plano ─
+$dockerConfig = "$env:APPDATA\Docker\settings.json"
+if (Test-Path $dockerConfig) {
+    try {
+        $cfg = Get-Content $dockerConfig -Raw | ConvertFrom-Json
+        $cfg | Add-Member -NotePropertyName "autoStart"          -NotePropertyValue $true -Force
+        $cfg | Add-Member -NotePropertyName "startOnBoot"        -NotePropertyValue $true -Force
+        $cfg | Add-Member -NotePropertyName "openUIOnStartupIfLoggedIn" -NotePropertyValue $false -Force
+        $cfg | ConvertTo-Json -Depth 10 | Set-Content $dockerConfig -Encoding utf8
+        Write-Host "  OK  Docker Desktop configurado para arrancar en segundo plano" -ForegroundColor Green
+    } catch {
+        Write-Host "  !   No se pudo configurar Docker Desktop automaticamente." -ForegroundColor Yellow
+        Write-Host "      Hazlo manualmente: Docker Desktop > Settings > General > Start when you log in" -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "  !   Docker Desktop no esta instalado o no se ha abierto aun." -ForegroundColor Yellow
+    Write-Host "      Instalalo, abrelo una vez y vuelve a ejecutar este script." -ForegroundColor DarkGray
 }
 
 # Eliminar tarea previa si existe
