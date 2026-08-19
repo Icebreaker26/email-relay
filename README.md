@@ -1,72 +1,129 @@
-# kernel — Email Relay
+# Email Relay
 
-Servicio Express que actúa como puente entre Railway y el servidor SMTP de cPanel.
-
-Railway no puede conectarse directamente a cPanel porque el firewall del hosting compartido bloquea IPs de datacenters en la nube. Este relay corre en una PC/servidor local de la oficina (que sí tiene acceso al SMTP) y se expone públicamente a través de un túnel Cloudflare.
+Servicio que permite a aplicaciones en la nube (Railway, Render, Heroku, etc.) enviar emails a través de un servidor SMTP de hosting compartido (cPanel, Plesk, etc.), que normalmente bloquea conexiones desde IPs de datacenter.
 
 ```
-Railway (backend) ──→ Cloudflare Tunnel ──→ PC oficina (relay) ──→ cPanel SMTP
+App en la nube ──→ Cloudflare Tunnel ──→ Este servicio (PC/servidor local) ──→ SMTP cPanel
 ```
+
+El servicio corre en una PC o servidor de oficina que sí tiene acceso al SMTP, y se expone públicamente a través de un túnel Cloudflare gratuito. Cuando se reinicia, actualiza automáticamente la URL del túnel en Railway sin intervención manual.
 
 ---
 
-## Archivos
+## Características
 
-| Archivo | Descripción |
-|---|---|
-| `server.js` | Servidor Express — recibe emails de Railway y los envía por SMTP |
-| `start.ps1` | Arranca el relay, el túnel y actualiza `RELAY_URL` en Railway |
-| `stop.ps1` | Detiene el relay y el túnel |
-| `registrar-inicio.ps1` | Registra `start.ps1` como tarea de Windows (auto-arranque al iniciar sesión) |
-| `.env` | Variables de entorno — **no subir a git** |
+- **Aislado en Docker** — corre en un contenedor con usuario sin privilegios; si alguien comprometiera el servicio, no tendría acceso al sistema del host
+- **Auto-arranque** — inicia solo cuando el PC enciende, sin intervención manual
+- **Auto-recuperación** — un watchdog detecta caídas de internet y reinicia el túnel automáticamente
+- **Cola de reenvío** — los emails que fallaron mientras el servicio estuvo apagado se reenvían solos al volver a arrancar
+- **Rate limiting** — máximo 500 emails por hora por IP para prevenir abuso
+- **Genérico** — cualquier proyecto puede usarlo, no está atado a una aplicación específica
 
 ---
 
-## Variables de entorno (`.env`)
+## Requisitos
+
+- Windows 10/11
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) instalado y abierto al menos una vez
+- Acceso a internet
+- Credenciales SMTP de tu hosting (cPanel, Plesk, etc.)
+
+---
+
+## Instalación
+
+### 1. Clonar o copiar la carpeta
+
+Descarga o clona este repositorio en el PC donde correrá el servicio. Por ejemplo:
+
+```
+C:\relay\
+```
+
+### 2. Crear el archivo `.env`
+
+Copia `.env.example` como `.env` y completa los valores:
+
+```
+C:\relay\.env
+```
 
 ```env
-# Autenticación entre Railway y este relay
-RELAY_SECRET=tu_secret_compartido
+# Clave secreta compartida entre tu app en la nube y este relay.
+# Generar con: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+RELAY_SECRET=
 
-# SMTP de cPanel
+# Credenciales SMTP de tu hosting
 SMTP_HOST=mail.tudominio.com
 SMTP_PORT=465
 SMTP_USER=correo@tudominio.com
-SMTP_PASS=tu_password
-SMTP_FROM="Cooperativa Progresemos <correo@tudominio.com>"
+SMTP_PASS=tu_contraseña_smtp
+SMTP_FROM="Nombre Remitente <correo@tudominio.com>"
 
-# Railway — para que start.ps1 actualice RELAY_URL automáticamente
-RAILWAY_TOKEN=tu_token_de_railway
-RAILWAY_SERVICE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+# Railway — para actualizar RELAY_URL automaticamente al arrancar
+# Token: railway.app > avatar > Account Settings > Tokens > New Token
+RAILWAY_TOKEN=
+# Service ID: railway.app > proyecto > servicio > Settings > Service ID
+RAILWAY_SERVICE_ID=
 
-# Backend en Railway — para reintentar emails pendientes al arrancar
+# URL de tu backend en Railway
 BACKEND_URL=https://tu-backend.up.railway.app
 
-# Puerto local del relay (opcional, default: 3099)
+# Puerto local del relay (no cambiar salvo conflicto)
 PORT=3099
 ```
 
-**Cómo obtener los valores de Railway:**
-- `RAILWAY_TOKEN`: railway.app → avatar → Account Settings → Tokens → New Token
-- `RAILWAY_SERVICE_ID`: railway.app → proyecto → servicio backend → Settings → Service ID
+> **Importante:** `.env` nunca se sube a git. Contiene tus credenciales.
+
+### 3. Instalar Docker Desktop
+
+Descarga e instala Docker Desktop desde [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop).
+
+Ábrelo una vez para que termine la configuración inicial. Puedes cerrarlo después — el siguiente paso lo configurará para que arranque solo.
+
+### 4. Ejecutar el instalador
+
+Abre PowerShell **como Administrador**, navega a la carpeta del proyecto y ejecuta:
+
+```powershell
+.\registrar-inicio.ps1
+```
+
+Este script hace automáticamente:
+- Descarga `cloudflared.exe` si no está presente
+- Configura Docker Desktop para arrancar en segundo plano al iniciar sesión
+- Registra una tarea de Windows que lanza el servicio automáticamente al encender el PC
+
+### 5. Reiniciar el PC
+
+Al volver a encender, el servicio arranca solo. No se requiere ninguna acción adicional.
+
+---
+
+## Variables en tu app (Railway)
+
+Agrega estas variables de entorno en el servicio de tu backend en Railway:
+
+| Variable | Valor |
+|---|---|
+| `RELAY_URL` | Se actualiza automáticamente al arrancar |
+| `RELAY_SECRET` | El mismo valor que pusiste en `.env` |
+
+`RELAY_URL` la gestiona el script — no necesitas tocarla manualmente.
 
 ---
 
 ## Uso diario
 
-### Arrancar
+### Arrancar manualmente
+
+Abre PowerShell en la carpeta del proyecto:
 
 ```powershell
 .\start.ps1
 ```
 
-El script:
-1. Inicia el relay en `localhost:3099`
-2. Lanza el túnel cloudflared y captura la URL pública
-3. Actualiza `RELAY_URL` en Railway vía API
-4. Copia la URL al portapapeles
-
-### Detener
+### Detener manualmente
 
 ```powershell
 .\stop.ps1
@@ -74,59 +131,69 @@ El script:
 
 ---
 
-## Configurar auto-arranque en el servidor de oficina
+## Cómo funciona el arranque automático
 
-Ejecutar **una sola vez** como Administrador:
+Cuando el PC enciende e inicia sesión ocurre esto en orden:
 
-```powershell
-.\registrar-inicio.ps1
-```
+1. Docker Desktop arranca en segundo plano
+2. Windows ejecuta `start.ps1 -Silent` automáticamente
+3. El script levanta el contenedor Docker con el relay
+4. Lanza el túnel cloudflared y captura la URL pública
+5. Llama la API de Railway y actualiza `RELAY_URL` con la nueva URL
+6. Notifica al backend para que reenvíe emails que hayan fallado mientras el servicio estuvo apagado
+7. Un watchdog queda corriendo en segundo plano verificando el túnel cada 2 minutos
 
-A partir de ahí, cada vez que el servidor enciende e inicia sesión, el relay y el túnel arrancan solos en segundo plano y Railway queda actualizado automáticamente.
+### Recuperación ante caída de internet
 
-Para quitar la tarea:
+Si el internet se cae y vuelve:
 
-```powershell
-Unregister-ScheduledTask -TaskName "KernelEmailRelay" -Confirm:$false
-```
+1. El watchdog detecta que el túnel no responde
+2. Reinicia el servicio automáticamente
+3. Crea un nuevo túnel con URL nueva
+4. Actualiza Railway con la nueva URL
+
+Sin intervención manual.
 
 ---
 
 ## Endpoints
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| `POST` | `/send-email` | Envía un email. Requiere `Authorization: Bearer <RELAY_SECRET>`. Body: `{ to, subject, html, text }` |
-| `GET` | `/health` | Verificación de estado. Devuelve `{ ok: true }` |
+| Método | Ruta | Auth | Descripción |
+|---|---|---|---|
+| `POST` | `/send-email` | `Bearer <RELAY_SECRET>` | Envía un email |
+| `GET` | `/health` | Ninguna | Verifica que el servicio está vivo |
+
+**Body de `/send-email`:**
+
+```json
+{
+  "to": "destinatario@ejemplo.com",
+  "subject": "Asunto del correo",
+  "html": "<p>Cuerpo en HTML</p>",
+  "text": "Cuerpo en texto plano (opcional)"
+}
+```
 
 ---
 
-## Instalación en un servidor nuevo
+## Integración en tu backend (Node.js)
 
-```powershell
-# 1. Instalar Docker Desktop
-# https://www.docker.com/products/docker-desktop
-
-# 2. Copiar esta carpeta al servidor
-
-# 3. Crear el .env con las variables de arriba
-
-# 4. Registrar la tarea de inicio (como Administrador)
-.\registrar-inicio.ps1
-```
-
-> Node.js ya no necesita estar instalado en el host — corre dentro del contenedor Docker.
-
----
-
-## Aislamiento (Docker)
-
-El relay corre dentro de un contenedor Docker con usuario sin privilegios (`relay`).
-Si alguien explotara una vulnerabilidad en el servicio, quedaría confinado al contenedor
-sin acceso al sistema de archivos del host ni a la red local.
-
-```
-Internet → Cloudflare Tunnel → [contenedor Docker] → SMTP cPanel
+```js
+const sendViaRelay = async (to, subject, html, text) => {
+  const res = await fetch(process.env.RELAY_URL + '/send-email', {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${process.env.RELAY_SECRET}`,
+    },
+    body:   JSON.stringify({ to, subject, html, text }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Relay error ${res.status}`);
+  }
+};
 ```
 
 ---
@@ -134,15 +201,29 @@ Internet → Cloudflare Tunnel → [contenedor Docker] → SMTP cPanel
 ## Diagnóstico
 
 ```powershell
-# Ver logs del relay
-docker logs email-relay
-
-# Ver logs en tiempo real
+# Ver logs del relay en tiempo real
 docker logs -f email-relay
 
 # Ver log del túnel cloudflared
 cat $env:TEMP\cf-kernel-tunnel.log
 
-# Probar el relay manualmente
+# Probar que el relay responde localmente
 Invoke-RestMethod http://localhost:3099/health
+
+# Ver tareas programadas de Windows
+Get-ScheduledTask -TaskName "KernelEmailRelay"
+
+# Eliminar la tarea de inicio
+Unregister-ScheduledTask -TaskName "KernelEmailRelay" -Confirm:$false
 ```
+
+---
+
+## Seguridad
+
+- El relay corre en un **contenedor Docker con usuario sin privilegios** (`relay`) — acceso mínimo al sistema
+- El `.env` se pasa como `--env-file` y **nunca entra a la imagen Docker**
+- **Rate limiting**: máximo 500 emails/hora por IP
+- **Validación de email**: el campo `to` se valida antes de enviar
+- **Errores SMTP ocultos**: los detalles internos solo aparecen en los logs del relay, nunca en la respuesta HTTP
+- La URL del túnel cambia en cada reinicio — la oscuridad suma una capa adicional
