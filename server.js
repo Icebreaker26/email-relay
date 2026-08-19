@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express from 'express';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
@@ -20,16 +21,15 @@ if (!RELAY_SECRET || !SMTP_HOST || !SMTP_USER || !SMTP_PASS || !SMTP_FROM) {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Rate limiter: máximo 500 emails por hora por IP (protege contra abuso si el secret se filtra)
-const ratemap = new Map();
+// Rate limiter global: máximo 500 emails por hora.
+// Todo el tráfico llega desde cloudflared (localhost), por lo que req.ip
+// siempre es 127.0.0.1 — el límite es efectivamente global, no por IP real.
+const rateWindow = { count: 0, reset: Date.now() + 3_600_000 };
 const rateLimit = (req, res, next) => {
-  const ip  = req.ip;
   const now = Date.now();
-  const win = ratemap.get(ip) ?? { count: 0, reset: now + 3_600_000 };
-  if (now > win.reset) { win.count = 0; win.reset = now + 3_600_000; }
-  win.count++;
-  ratemap.set(ip, win);
-  if (win.count > 500) return res.status(429).json({ error: 'Demasiadas solicitudes' });
+  if (now > rateWindow.reset) { rateWindow.count = 0; rateWindow.reset = now + 3_600_000; }
+  rateWindow.count++;
+  if (rateWindow.count > 500) return res.status(429).json({ error: 'Demasiadas solicitudes' });
   next();
 };
 
@@ -43,10 +43,12 @@ const transporter = nodemailer.createTransport({
 });
 
 app.post('/send-email', rateLimit, async (req, res) => {
-  const auth = req.headers['authorization'];
-  if (!auth || auth !== `Bearer ${RELAY_SECRET}`) {
-    return res.status(401).json({ error: 'No autorizado' });
-  }
+  const auth    = req.headers['authorization'] ?? '';
+  const given   = Buffer.from(auth.startsWith('Bearer ') ? auth.slice(7) : '');
+  const expected = Buffer.from(RELAY_SECRET);
+  const valid   = given.length === expected.length &&
+                  crypto.timingSafeEqual(given, expected);
+  if (!valid) return res.status(401).json({ error: 'No autorizado' });
 
   const { to, subject, html, text } = req.body;
   if (!to || !subject || !html) {

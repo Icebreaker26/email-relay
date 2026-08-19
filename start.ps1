@@ -234,7 +234,9 @@ $watchdogScript = {
     }
 }
 
-Start-Job -ScriptBlock $watchdogScript -ArgumentList $MyInvocation.MyCommand.Definition | Out-Null
+# Matar watchdogs previos para evitar acumulacion tras reinicios
+Get-Job -Name "RelayWatchdog" -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
+Start-Job -Name "RelayWatchdog" -ScriptBlock $watchdogScript -ArgumentList $MyInvocation.MyCommand.Definition | Out-Null
 
 if (-not $Silent) {
     Read-Host "Presiona Enter para cerrar (relay y tunel siguen corriendo)"

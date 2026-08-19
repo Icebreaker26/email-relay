@@ -22,18 +22,18 @@ if ($cfCmd) {
 } elseif (Test-Path $cfDest) {
     Write-Host "  OK  cloudflared encontrado en $cfDest" -ForegroundColor Green
 } else {
-    Write-Host "  Descargando cloudflared..." -NoNewline
+    Write-Host "  Instalando cloudflared via winget (verifica firma automaticamente)..." -NoNewline
     try {
-        Invoke-WebRequest `
-            -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" `
-            -OutFile $cfDest `
-            -UseBasicParsing
+        winget install cloudflare.cloudflared --silent --accept-package-agreements --accept-source-agreements | Out-Null
+        # Refrescar PATH para que cloudflared quede disponible en esta sesion
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("Path", "User")
         Write-Host " listo" -ForegroundColor Green
-        Write-Host "  OK  cloudflared guardado en $cfDest" -ForegroundColor Green
+        Write-Host "  OK  cloudflared instalado y verificado" -ForegroundColor Green
     } catch {
         Write-Host " ERROR" -ForegroundColor Red
-        Write-Host "  !   No se pudo descargar cloudflared: $_" -ForegroundColor Yellow
-        Write-Host "      Descargalo manualmente de https://github.com/cloudflare/cloudflared/releases" -ForegroundColor DarkGray
+        Write-Host "  !   No se pudo instalar cloudflared: $_" -ForegroundColor Yellow
+        Write-Host "      Instala manualmente: winget install cloudflare.cloudflared" -ForegroundColor DarkGray
     }
 }
 
