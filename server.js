@@ -20,7 +20,7 @@ if (!RELAY_SECRET || !SMTP_HOST || !SMTP_USER || !SMTP_PASS || !SMTP_FROM) {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Rate limiter simple: máximo 60 emails por hora por IP
+// Rate limiter: máximo 500 emails por hora por IP (protege contra abuso si el secret se filtra)
 const ratemap = new Map();
 const rateLimit = (req, res, next) => {
   const ip  = req.ip;
@@ -29,7 +29,7 @@ const rateLimit = (req, res, next) => {
   if (now > win.reset) { win.count = 0; win.reset = now + 3_600_000; }
   win.count++;
   ratemap.set(ip, win);
-  if (win.count > 60) return res.status(429).json({ error: 'Demasiadas solicitudes' });
+  if (win.count > 500) return res.status(429).json({ error: 'Demasiadas solicitudes' });
   next();
 };
 
