@@ -240,4 +240,8 @@ Start-Job -Name "RelayWatchdog" -ScriptBlock $watchdogScript -ArgumentList $MyIn
 
 if (-not $Silent) {
     Read-Host "Presiona Enter para cerrar (relay y tunel siguen corriendo)"
+} else {
+    # Mantener la sesion viva para que el watchdog siga corriendo.
+    # Si se cierra esta sesion, el Start-Job muere con ella.
+    while ($true) { Start-Sleep -Seconds 60 }
 }
