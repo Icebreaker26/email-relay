@@ -204,6 +204,9 @@ const sendViaRelay = async (to, subject, html, text) => {
 # Ver logs del relay en tiempo real
 docker logs -f email-relay
 
+# Ver log persistente (sobrevive reinicios del contenedor)
+docker run --rm -v email-relay-logs:/logs alpine cat /logs/relay.log
+
 # Ver log del túnel cloudflared
 cat $env:TEMP\cf-kernel-tunnel.log
 
@@ -215,7 +218,15 @@ Get-ScheduledTask -TaskName "KernelEmailRelay"
 
 # Eliminar la tarea de inicio
 Unregister-ScheduledTask -TaskName "KernelEmailRelay" -Confirm:$false
+
+# Forzar reconstrucción de la imagen Docker (después de cambiar server.js)
+docker rmi email-relay
+.\start.ps1
 ```
+
+> **Logs persistentes:** el relay escribe en `/app/logs/relay.log` dentro del contenedor.
+> Ese directorio está montado en un volumen Docker (`email-relay-logs`) que sobrevive reinicios y
+> recreaciones del contenedor. El archivo rota automáticamente al superar los 5 MB.
 
 ---
 

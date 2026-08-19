@@ -1,8 +1,34 @@
 import crypto from 'crypto';
+import { appendFileSync, statSync, writeFileSync, mkdirSync } from 'fs';
 import express from 'express';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 dotenv.config();
+
+// ── Logging persistente a /app/logs/relay.log ────────────────
+// El directorio lo monta Docker como volumen; fuera de Docker no existe
+// pero el try/catch lo ignora silenciosamente.
+const LOG_PATH = '/app/logs/relay.log';
+const MAX_LOG  = 5 * 1024 * 1024; // 5 MB — rota en un solo archivo
+
+try { mkdirSync('/app/logs', { recursive: true }); } catch { }
+
+const writeLine = (level, args) => {
+  const line = `${new Date().toISOString()} [${level}] ${args.join(' ')}\n`;
+  try {
+    let size = 0;
+    try { size = statSync(LOG_PATH).size; } catch { }
+    if (size > MAX_LOG) writeFileSync(LOG_PATH, line);
+    else appendFileSync(LOG_PATH, line);
+  } catch { }
+};
+
+const _log   = console.log.bind(console);
+const _warn  = console.warn.bind(console);
+const _error = console.error.bind(console);
+console.log   = (...a) => { _log(...a);   writeLine('INFO',  a); };
+console.warn  = (...a) => { _warn(...a);  writeLine('WARN',  a); };
+console.error = (...a) => { _error(...a); writeLine('ERROR', a); };
 
 const app  = express();
 app.use(express.json({ limit: '512kb' }));

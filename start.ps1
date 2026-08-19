@@ -50,16 +50,22 @@ try {
 docker stop email-relay 2>$null | Out-Null
 docker rm   email-relay 2>$null | Out-Null
 
-# Construir imagen (solo reconstruye si hubo cambios)
-Write-Host "      Construyendo imagen Docker..." -NoNewline
-docker build -t email-relay $RelayDir | Out-Null
-Write-Host " listo" -ForegroundColor Green
+# Construir imagen solo si no existe (forzar: docker rmi email-relay)
+$imageExists = docker image inspect email-relay 2>$null
+if ($imageExists) {
+    Write-OK "Imagen Docker existente reutilizada (ejecuta 'docker rmi email-relay' para reconstruir)"
+} else {
+    Write-Host "      Construyendo imagen Docker..." -NoNewline
+    docker build -t email-relay $RelayDir | Out-Null
+    Write-Host " listo" -ForegroundColor Green
+}
 
-# Arrancar contenedor aislado con auto-restart
+# Arrancar contenedor con volumen persistente de logs
 docker run -d `
     --name email-relay `
     --env-file "$envFile" `
     -p "${RelayPort}:${RelayPort}" `
+    -v email-relay-logs:/app/logs `
     --restart unless-stopped `
     email-relay | Out-Null
 
@@ -201,7 +207,8 @@ Write-Host "  RELAY_URL = $tunnelUrl" -ForegroundColor White
 try { $tunnelUrl | Set-Clipboard; Write-Host "  (copiado al portapapeles)" -ForegroundColor DarkGray } catch { }
 
 Write-Host ""
-Write-Host "  Logs del relay : docker logs email-relay" -ForegroundColor DarkGray
+Write-Host "  Logs del relay : docker logs -f email-relay" -ForegroundColor DarkGray
+Write-Host "  Log persistente: docker run --rm -v email-relay-logs:/logs alpine cat /logs/relay.log" -ForegroundColor DarkGray
 Write-Host "  Log del tunel  : $TunnelLog" -ForegroundColor DarkGray
 Write-Host ""
 

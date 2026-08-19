@@ -11,6 +11,9 @@ RUN npm ci --omit=dev
 
 COPY server.js ./
 
+# Directorio de logs — el volumen se monta aquí en producción
+RUN mkdir -p /app/logs && chown relay:relay /app/logs
+
 USER relay
 
 EXPOSE 3099
