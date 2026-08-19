@@ -13,6 +13,30 @@ if (-not (Test-Path $script)) {
     exit 1
 }
 
+# ── Descargar cloudflared si no esta presente ────────────────
+$cfDest = Join-Path $scriptDir "cloudflared.exe"
+$cfCmd  = Get-Command cloudflared -ErrorAction SilentlyContinue
+
+if ($cfCmd) {
+    Write-Host "  OK  cloudflared ya esta en PATH ($($cfCmd.Source))" -ForegroundColor Green
+} elseif (Test-Path $cfDest) {
+    Write-Host "  OK  cloudflared encontrado en $cfDest" -ForegroundColor Green
+} else {
+    Write-Host "  Descargando cloudflared..." -NoNewline
+    try {
+        Invoke-WebRequest `
+            -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" `
+            -OutFile $cfDest `
+            -UseBasicParsing
+        Write-Host " listo" -ForegroundColor Green
+        Write-Host "  OK  cloudflared guardado en $cfDest" -ForegroundColor Green
+    } catch {
+        Write-Host " ERROR" -ForegroundColor Red
+        Write-Host "  !   No se pudo descargar cloudflared: $_" -ForegroundColor Yellow
+        Write-Host "      Descargalo manualmente de https://github.com/cloudflare/cloudflared/releases" -ForegroundColor DarkGray
+    }
+}
+
 # ── Configurar Docker Desktop para arrancar en segundo plano ─
 $dockerConfig = "$env:APPDATA\Docker\settings.json"
 if (Test-Path $dockerConfig) {
